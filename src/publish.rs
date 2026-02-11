@@ -114,28 +114,30 @@ fn publish_to_crates_io(manifest_path: &Path, opts: &PublishOptions) -> Result<(
         .parent()
         .context("Failed to get crate directory")?;
 
-    // Get token from options or environment
-    let env_token = std::env::var("CARGO_REGISTRY_TOKEN").ok();
-    let token = opts.token.as_deref().or(env_token.as_deref());
-
     let mut args = vec!["publish"];
 
-    // Only pass --token if explicitly provided
-    // Otherwise, cargo will use credentials from ~/.cargo/credentials.toml
-    if let Some(token) = token {
-        args.push("--token");
-        args.push(token);
-    }
-
-    if opts.allow_dirty {
+    // Always use --allow-dirty in CI environments to handle modified Cargo.lock
+    if opts.allow_dirty || std::env::var("CI").is_ok() {
         args.push("--allow-dirty");
     }
 
-    let output = Command::new("cargo")
-        .args(&args)
-        .current_dir(crate_dir)
-        .output()
-        .context("Failed to run cargo publish")?;
+    // Don't pass --token flag (deprecated), rely on CARGO_REGISTRY_TOKEN env var
+    // If token is provided via options, set it as env var
+    let token_env = if let Some(ref token) = opts.token {
+        Some(("CARGO_REGISTRY_TOKEN", token.as_str()))
+    } else {
+        None
+    };
+
+    let mut cmd = Command::new("cargo");
+    cmd.args(&args).current_dir(crate_dir);
+
+    // Set token as environment variable if provided
+    if let Some((key, value)) = token_env {
+        cmd.env(key, value);
+    }
+
+    let output = cmd.output().context("Failed to run cargo publish")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
