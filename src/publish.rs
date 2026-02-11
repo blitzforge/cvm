@@ -123,11 +123,10 @@ fn publish_to_crates_io(manifest_path: &Path, opts: &PublishOptions) -> Result<(
 
     // Don't pass --token flag (deprecated), rely on CARGO_REGISTRY_TOKEN env var
     // If token is provided via options, set it as env var
-    let token_env = if let Some(ref token) = opts.token {
-        Some(("CARGO_REGISTRY_TOKEN", token.as_str()))
-    } else {
-        None
-    };
+    let token_env = opts
+        .token
+        .as_ref()
+        .map(|token| ("CARGO_REGISTRY_TOKEN", token.as_str()));
 
     let mut cmd = Command::new("cargo");
     cmd.args(&args).current_dir(crate_dir);
