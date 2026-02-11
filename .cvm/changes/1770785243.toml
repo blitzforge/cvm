@@ -1,0 +1,6 @@
+[update]
+major = []
+minor = []
+patch = ["cvm_cli"]
+pre = false
+summary = "Remove automatic git-tagging and release features"

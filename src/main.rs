@@ -24,31 +24,25 @@ enum Commands {
         /// Show what would be applied without making changes
         #[arg(long)]
         dry_run: bool,
-        /// Create git tags for each updated crate (overrides config)
-        #[arg(long, conflicts_with = "no_git_tags")]
-        git_tags: bool,
-        /// Do not create git tags (overrides config)
-        #[arg(long, conflicts_with = "git_tags")]
-        no_git_tags: bool,
     },
     /// Check for pending changes
     Status,
+    /// Get crate information as JSON
+    Info {
+        /// Output format
+        #[arg(long, default_value = "json")]
+        format: String,
+    },
     /// Manage prerelease mode
     Pre {
         #[command(subcommand)]
         action: PreAction,
     },
-    /// Publish crates to crates.io with git tags and GitHub releases
+    /// Publish crates to crates.io
     Publish {
         /// Show what would be published without making changes
         #[arg(long)]
         dry_run: bool,
-        /// Do not create git tags
-        #[arg(long)]
-        no_tag: bool,
-        /// Do not create GitHub releases
-        #[arg(long)]
-        no_release: bool,
         /// Cargo registry token (overrides CARGO_REGISTRY_TOKEN env var)
         #[arg(long)]
         token: Option<String>,
@@ -138,27 +132,15 @@ fn main() -> Result<()> {
             changes::save_pending(&summary, &major_selected, &minor_selected, &patch_selected)?;
             Ok(())
         }
-        Some(Commands::Apply {
-            dry_run,
-            git_tags,
-            no_git_tags,
-        }) => {
+        Some(Commands::Apply { dry_run }) => {
             // Check if CVM is initialized
             if !std::path::Path::new(".cvm").exists() {
                 eprintln!("❌ CVM is not initialized in this project.");
                 eprintln!("\nRun 'cvm setup' to initialize CVM.");
                 std::process::exit(1);
             }
-            // Determine whether to create tags: CLI flags override config
-            let create_tags = if git_tags {
-                true
-            } else if no_git_tags {
-                false
-            } else {
-                config::should_create_git_tags()
-            };
 
-            changes::load_and_apply_pending(dry_run, create_tags)?;
+            changes::load_and_apply_pending(dry_run)?;
             Ok(())
         }
         Some(Commands::Status) => {
@@ -169,6 +151,19 @@ fn main() -> Result<()> {
                 std::process::exit(1);
             }
             changes::check_pending_changes()?;
+            Ok(())
+        }
+        Some(Commands::Info { format }) => {
+            // Get all crates in the project
+            let crates = project::analyze_project()?;
+
+            if format == "json" {
+                let json = serde_json::to_string_pretty(&crates)?;
+                println!("{}", json);
+            } else {
+                eprintln!("❌ Unsupported format: {}", format);
+                std::process::exit(1);
+            }
             Ok(())
         }
         Some(Commands::Pre { action }) => {
@@ -186,8 +181,6 @@ fn main() -> Result<()> {
         }
         Some(Commands::Publish {
             dry_run,
-            no_tag,
-            no_release,
             token,
             allow_dirty,
         }) => {
@@ -200,20 +193,15 @@ fn main() -> Result<()> {
 
             let opts = publish::PublishOptions {
                 dry_run,
-                create_tags: !no_tag,
-                create_release: !no_release,
                 token,
                 allow_dirty,
             };
 
             let published = publish::publish_crates(&opts)?;
 
-            // Output JSON for CI/CD integration
-            if !published.is_empty() {
-                let json = serde_json::to_string(&published)?;
-                println!("\n📋 Published crates (JSON):");
-                println!("{}", json);
-            }
+            // Output JSON for CI/CD integration (always output, even if empty)
+            let json = serde_json::to_string(&published)?;
+            println!("\n::cvm-output-json::{}", json);
 
             Ok(())
         }

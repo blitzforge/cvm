@@ -59,7 +59,6 @@ This creates:
    ```bash
    cvm apply
    ```
-   By default, this creates git tags. Configure in `.cvm/config.toml` or use `--no-git-tags` to disable.
 
 ### Prerelease Workflow
 
@@ -161,6 +160,51 @@ cvm apply
 # All updates applied successfully!
 ```
 
+**Options:**
+- `--dry-run`: Preview changes without applying them
+
+### `cvm status`
+Check for pending version changes.
+
+**Example:**
+```bash
+cvm status
+```
+
+Returns exit code 0 if no pending changes, exit code 1 if there are pending changes (useful for CI/CD).
+
+### `cvm info`
+Get crate information as JSON. Useful for extracting version numbers and crate metadata in CI/CD pipelines.
+
+**Example:**
+```bash
+cvm info
+# [{"name":"my-crate","version":"1.0.0","path":"Cargo.toml"}]
+```
+
+**Options:**
+- `--format <FORMAT>`: Output format (default: json)
+
+### `cvm publish`
+Publish crates to crates.io.
+
+**Example:**
+```bash
+cvm publish
+```
+
+**Options:**
+- `--dry-run`: Show what would be published without making changes
+- `--token <TOKEN>`: Cargo registry token (overrides CARGO_REGISTRY_TOKEN env var)
+- `--allow-dirty`: Allow publishing with uncommitted changes
+
+**Output:**
+The command outputs JSON at the end with published crate information:
+```
+::cvm-output-json::[{"name":"my-crate","version":"1.0.0"}]
+```
+This makes it easy to parse in CI/CD scripts.
+
 ### `cvm pre start [identifier]`
 Enables prerelease mode with the specified identifier (e.g., `canary`, `alpha`, `beta`, `rc`).
 
@@ -200,10 +244,6 @@ Stores CVM configuration:
 
 ```toml
 # CVM Configuration
-
-[config]
-# Automatically create git tags when applying version changes
-git-tags = true
 
 [pre]
 enabled = true
@@ -312,11 +352,6 @@ jobs:
           git push
 ```
 
-See `.github-workflows-example.yml` for more complete examples including:
-- Creating PRs for version bumps
-- Canary releases with prerelease mode
-- Multi-crate workspace handling
-
 ### Typical CI/CD Flow
 
 1. **Development Branch** (`canary`):
@@ -328,19 +363,48 @@ See `.github-workflows-example.yml` for more complete examples including:
    - Check for pending changes: `cvm status`
    - Apply changes: `cvm apply`
    - Run tests with new versions
+   - Commit updated `Cargo.toml` files
    - Create PR to main or commit directly
 
 3. **Production Branch** (`main`):
    - Merge PR with version bumps
-   - Tag release
-   - Publish to crates.io
+   - Publish to crates.io: `cvm publish`
+
+### Extracting Version Information in Scripts
+
+Use `cvm info` to extract version information programmatically:
+
+```bash
+# Get current version for a single crate project
+VERSION=$(cvm info | jq -r '.[0].version')
+echo "Current version: $VERSION"
+
+# Get all crate names and versions
+cvm info | jq -r '.[] | "\(.name): \(.version)"'
+
+# Check if a specific crate exists
+HAS_CRATE=$(cvm info | jq -r '.[] | select(.name == "my-crate") | .name')
+```
+
+When using `cvm publish`, extract the JSON output:
+
+```bash
+# Capture publish output
+OUTPUT=$(cvm publish 2>&1)
+
+# Extract JSON from output
+JSON=$(echo "$OUTPUT" | grep "::cvm-output-json::" | sed 's/.*::cvm-output-json:://')
+
+# Parse published crates
+echo "$JSON" | jq -r '.[] | "Published \(.name) v\(.version)"'
+```
 
 ## Best Practices
 
 1. **Always add meaningful summaries**: They serve as a changelog for your version bumps
 2. **Use prerelease mode for testing**: Test breaking changes with canary releases
 3. **Commit `.cvm/` to version control**: Share pending changes with your team
-4. **Apply changes before publishing**: Run `cvm apply` before `cargo publish`
+4. **Apply changes before publishing**: Run `cvm apply` before `cvm publish`
 5. **Use `--dry-run` in CI**: Preview changes before applying them
 6. **Check status in pipelines**: Use `cvm status` exit codes for conditional logic
 

@@ -7,14 +7,11 @@ use std::process::Command;
 pub struct PublishedCrate {
     pub name: String,
     pub version: String,
-    pub tag: String,
 }
 
 #[derive(Debug)]
 pub struct PublishOptions {
     pub dry_run: bool,
-    pub create_tags: bool,
-    pub create_release: bool,
     pub token: Option<String>,
     pub allow_dirty: bool,
 }
@@ -23,8 +20,6 @@ impl Default for PublishOptions {
     fn default() -> Self {
         Self {
             dry_run: false,
-            create_tags: true,
-            create_release: true,
             token: None,
             allow_dirty: false,
         }
@@ -44,7 +39,7 @@ struct Package {
     publish: Option<Vec<String>>,
 }
 
-/// Publish crates to crates.io with optional git tagging and GitHub releases
+/// Publish crates to crates.io
 pub fn publish_crates(opts: &PublishOptions) -> Result<Vec<PublishedCrate>> {
     println!("🚀 Starting publish process...\n");
 
@@ -57,7 +52,6 @@ pub fn publish_crates(opts: &PublishOptions) -> Result<Vec<PublishedCrate>> {
         return Ok(vec![]);
     }
 
-    let is_workspace = packages.len() > 1;
     let mut published = Vec::new();
 
     for package in &packages {
@@ -70,38 +64,6 @@ pub fn publish_crates(opts: &PublishOptions) -> Result<Vec<PublishedCrate>> {
         }
 
         println!("📦 Processing: {} v{}", package.name, package.version);
-
-        // Determine tag name
-        let tag = if is_workspace {
-            format!("{}-v{}", package.name, package.version)
-        } else {
-            format!("v{}", package.version)
-        };
-
-        // Check if tag already exists
-        if opts.create_tags && tag_exists(&tag)? {
-            println!("⚠️  Tag {} already exists, skipping...\n", tag);
-            continue;
-        }
-
-        // Create and push git tag
-        if opts.create_tags && !opts.dry_run {
-            create_and_push_tag(&tag, &package.name, &package.version)?;
-            println!("✅ Created and pushed tag: {}", tag);
-        } else if opts.create_tags && opts.dry_run {
-            println!("🔍 Would create tag: {}", tag);
-        }
-
-        // Create GitHub Release
-        if opts.create_release && !opts.dry_run {
-            if let Err(e) = create_github_release(&tag, &package.name, &package.version) {
-                println!("⚠️  Failed to create GitHub release: {}", e);
-            } else {
-                println!("✅ Created GitHub release: {}", tag);
-            }
-        } else if opts.create_release && opts.dry_run {
-            println!("🔍 Would create GitHub release: {}", tag);
-        }
 
         // Publish to crates.io
         if !opts.dry_run {
@@ -120,7 +82,6 @@ pub fn publish_crates(opts: &PublishOptions) -> Result<Vec<PublishedCrate>> {
         published.push(PublishedCrate {
             name: package.name.clone(),
             version: package.version.clone(),
-            tag,
         });
 
         println!();
@@ -130,7 +91,7 @@ pub fn publish_crates(opts: &PublishOptions) -> Result<Vec<PublishedCrate>> {
     if !published.is_empty() {
         println!("✨ Summary:");
         for p in &published {
-            println!("  • {} v{} ({})", p.name, p.version, p.tag);
+            println!("  • {} v{}", p.name, p.version);
         }
     } else {
         println!("ℹ️  No crates were published");
@@ -156,72 +117,6 @@ fn get_cargo_metadata() -> Result<CargoMetadata> {
         serde_json::from_slice(&output.stdout).context("Failed to parse cargo metadata")?;
 
     Ok(metadata)
-}
-
-fn tag_exists(tag: &str) -> Result<bool> {
-    let output = Command::new("git")
-        .args(["rev-parse", tag])
-        .output()
-        .context("Failed to check if git tag exists")?;
-
-    Ok(output.status.success())
-}
-
-fn create_and_push_tag(tag: &str, name: &str, version: &str) -> Result<()> {
-    // Create tag
-    let message = format!("Release {} v{}", name, version);
-    let status = Command::new("git")
-        .args(["tag", "-a", tag, "-m", &message])
-        .status()
-        .context("Failed to create git tag")?;
-
-    if !status.success() {
-        anyhow::bail!("Failed to create git tag");
-    }
-
-    // Push tag
-    let status = Command::new("git")
-        .args(["push", "origin", tag])
-        .status()
-        .context("Failed to push git tag")?;
-
-    if !status.success() {
-        anyhow::bail!("Failed to push git tag");
-    }
-
-    Ok(())
-}
-
-fn create_github_release(tag: &str, name: &str, version: &str) -> Result<()> {
-    // Check if gh CLI is available
-    let gh_check = Command::new("gh").arg("--version").output();
-
-    if gh_check.is_err() {
-        anyhow::bail!("gh CLI not found (install from https://cli.github.com)");
-    }
-
-    let title = format!("{} v{}", name, version);
-    let notes = format!("Release of {} version {}", name, version);
-
-    let status = Command::new("gh")
-        .args([
-            "release",
-            "create",
-            tag,
-            "--title",
-            &title,
-            "--notes",
-            &notes,
-            "--verify-tag",
-        ])
-        .status()
-        .context("Failed to create GitHub release")?;
-
-    if !status.success() {
-        anyhow::bail!("gh release create failed");
-    }
-
-    Ok(())
 }
 
 fn publish_to_crates_io(manifest_path: &Path, opts: &PublishOptions) -> Result<()> {

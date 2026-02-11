@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
+use serde::Serialize;
 use std::fs;
 use toml::{Table, Value};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CrateInfo {
     pub name: String,
     pub version: String,
