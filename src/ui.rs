@@ -6,6 +6,7 @@ pub fn select_crates(prompt: &str, remaining: &mut Vec<CrateInfo>) -> Vec<CrateI
     if remaining.is_empty() {
         return vec![];
     }
+
     let items: Vec<String> = remaining
         .iter()
         .map(|c| format!("{} v{} at {}", c.name, c.version, c.path))

@@ -55,19 +55,28 @@ fn main() -> Result<()> {
             }
             let mut remaining = crates;
 
-            // Select for major bump
-            let major_selected = ui::select_crates("Select crates for major bump:", &mut remaining);
+            // Select for major bump (red)
+            let major_selected = ui::select_crates(
+                "Select crates for \x1b[91mmajor\x1b[0m bump:",
+                &mut remaining,
+            );
 
-            // Select for minor bump if remaining
+            // Select for minor bump if remaining (yellow)
             let minor_selected = if !remaining.is_empty() {
-                ui::select_crates("Select crates for minor bump:", &mut remaining)
+                ui::select_crates(
+                    "Select crates for \x1b[93mminor\x1b[0m bump:",
+                    &mut remaining,
+                )
             } else {
                 vec![]
             };
 
-            // Select for patch bump if still remaining
+            // Select for patch bump if still remaining (blue)
             let patch_selected = if !remaining.is_empty() {
-                ui::select_crates("Select crates for patch bump:", &mut remaining)
+                ui::select_crates(
+                    "Select crates for \x1b[94mpatch\x1b[0m bump:",
+                    &mut remaining,
+                )
             } else {
                 vec![]
             };
