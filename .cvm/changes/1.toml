@@ -1,0 +1,6 @@
+[update]
+summary = "Fix Ctrl+C not exiting the process during interactive prompts"
+major = []
+minor = []
+patch = ["cvm_cli"]
+pre = false

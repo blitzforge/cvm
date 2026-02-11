@@ -1,6 +1,0 @@
-[update]
-major = ["cvm_cli"]
-minor = []
-patch = []
-pre = false
-summary = "Fix bug in operation cancelling process"
