@@ -1,6 +1,0 @@
-[update]
-major = ["cvm_cli"]
-minor = []
-patch = []
-pre = false
-summary = "Add tag and release steps to release workflow"
