@@ -1,6 +1,0 @@
-[update]
-major = []
-minor = []
-patch = ["cvm_cli"]
-pre = false
-summary = "Use env token and CI allow-dirty for cargo publish"
