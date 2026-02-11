@@ -232,7 +232,7 @@ fn create_git_tag(crate_name: &str, version: &str) -> Result<()> {
 
     // Check if tag already exists
     let check_tag = Command::new("git")
-        .args(&["tag", "-l", &tag_name])
+        .args(["tag", "-l", &tag_name])
         .output()
         .context("Failed to check existing tags")?;
 
@@ -244,7 +244,7 @@ fn create_git_tag(crate_name: &str, version: &str) -> Result<()> {
     // Create the tag
     let tag_message = format!("Release {} v{}", crate_name, version);
     let result = Command::new("git")
-        .args(&["tag", "-a", &tag_name, "-m", &tag_message])
+        .args(["tag", "-a", &tag_name, "-m", &tag_message])
         .output()
         .context("Failed to create git tag")?;
 
@@ -253,7 +253,7 @@ fn create_git_tag(crate_name: &str, version: &str) -> Result<()> {
 
         // Push the tag
         let push_result = Command::new("git")
-            .args(&["push", "origin", &tag_name])
+            .args(["push", "origin", &tag_name])
             .output()
             .context("Failed to push git tag")?;
 
