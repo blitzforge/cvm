@@ -1,6 +1,6 @@
 # CVM - Crate Version Manager
 
-[![Crates.io](https://img.shields.io/crates/v/cvm.svg)](https://crates.io/crates/cvm)
+[![Crates.io](https://img.shields.io/crates/v/cvm_cli.svg)](https://crates.io/crates/cvm_cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A powerful command-line tool for managing semantic versioning of Rust crates in both single-crate and workspace projects.
@@ -17,7 +17,7 @@ A powerful command-line tool for managing semantic versioning of Rust crates in 
 ## Installation
 
 ```bash
-cargo install cvm
+cargo install cvm_cli
 ```
 
 Or build from source:
@@ -314,5 +314,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Links
 
 - [Repository](https://github.com/blitzforge/cvm)
-- [Crates.io](https://crates.io/crates/cvm)
-- [Documentation](https://docs.rs/cvm)
+- [Crates.io](https://crates.io/crates/cvm_cli)
+- [Documentation](https://docs.rs/cvm_cli)
