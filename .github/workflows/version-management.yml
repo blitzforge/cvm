@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - alpha
-    paths:
-      - ".cvm/changes/**"
   workflow_dispatch:
 
 jobs:
