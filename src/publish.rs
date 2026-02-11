@@ -118,14 +118,10 @@ fn publish_to_crates_io(manifest_path: &Path, opts: &PublishOptions) -> Result<(
     let env_token = std::env::var("CARGO_REGISTRY_TOKEN").ok();
     let token = opts.token.as_deref().or(env_token.as_deref());
 
-    if token.is_none() {
-        anyhow::bail!(
-            "CARGO_REGISTRY_TOKEN not set. Please set it in your environment or pass --token"
-        );
-    }
-
     let mut args = vec!["publish"];
 
+    // Only pass --token if explicitly provided
+    // Otherwise, cargo will use credentials from ~/.cargo/credentials.toml
     if let Some(token) = token {
         args.push("--token");
         args.push(token);
@@ -135,14 +131,16 @@ fn publish_to_crates_io(manifest_path: &Path, opts: &PublishOptions) -> Result<(
         args.push("--allow-dirty");
     }
 
-    let status = Command::new("cargo")
+    let output = Command::new("cargo")
         .args(&args)
         .current_dir(crate_dir)
-        .status()
+        .output()
         .context("Failed to run cargo publish")?;
 
-    if !status.success() {
-        anyhow::bail!("cargo publish failed");
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        anyhow::bail!("cargo publish failed:\n{}\n{}", stdout, stderr);
     }
 
     Ok(())
