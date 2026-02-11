@@ -10,7 +10,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Job 1: Check for pending version changes and apply them via PR
   check-and-apply:
     runs-on: ubuntu-latest
     permissions:
@@ -39,7 +38,6 @@ jobs:
           echo "- Has pending changes: **${{ steps.cvm.outputs.has-changes }}**" >> $GITHUB_STEP_SUMMARY
           echo "- Changes applied: **${{ steps.cvm.outputs.applied }}**" >> $GITHUB_STEP_SUMMARY
 
-  # Job 2: Run tests before publishing (optional but recommended)
   test:
     runs-on: ubuntu-latest
     needs: check-and-apply
@@ -65,17 +63,12 @@ jobs:
       - name: Check formatting
         run: cargo fmt -- --check
 
-  # Job 3: Publish to crates.io with tags and releases
   publish:
     runs-on: ubuntu-latest
     needs: [check-and-apply, test]
-    # Only publish when:
-    # 1. There are NO pending changes (versions are up-to-date)
-    # 2. Tests passed
-    # Note: CVM manages prerelease vs release based on its own state
     if: needs.check-and-apply.outputs.has-changes == 'false'
     permissions:
-      contents: write # Required for creating tags and releases
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -90,6 +83,40 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
+      - name: Create Git Tag
+        if: steps.publish.outputs.published == 'true'
+        run: |
+          VERSION="${{ steps.publish.outputs.version }}"
+          if [ -n "$VERSION" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a "v$VERSION" -m "Release v$VERSION"
+            git push origin "v$VERSION"
+            echo "Created and pushed tag v$VERSION"
+          else
+            echo "No version found, skipping tag creation"
+          fi
+
+      - name: Create GitHub Release
+        if: steps.publish.outputs.published == 'true' && steps.publish.outputs.version != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.publish.outputs.version }}"
+          gh release create "v$VERSION" \
+            --title "Release v$VERSION" \
+            --notes "## 🚀 Release v$VERSION
+
+          Published to [crates.io](https://crates.io/crates/cvm_cli/$VERSION)
+
+          ### Installation
+          \`\`\`bash
+          cargo install cvm_cli
+          \`\`\`
+
+          ### What's Changed
+          This release includes bug fixes and improvements to the CVM CLI tool."
+
       - name: Publish Summary
         if: steps.publish.outputs.published == 'true'
         run: |
@@ -97,6 +124,8 @@ jobs:
           echo "- Published: **${{ steps.publish.outputs.published }}**" >> $GITHUB_STEP_SUMMARY
           if [ -n "${{ steps.publish.outputs.version }}" ]; then
             echo "- Version: **v${{ steps.publish.outputs.version }}**" >> $GITHUB_STEP_SUMMARY
+            echo "- Tag: **v${{ steps.publish.outputs.version }}**" >> $GITHUB_STEP_SUMMARY
+            echo "- Release: **[v${{ steps.publish.outputs.version }}](https://github.com/${{ github.repository }}/releases/tag/v${{ steps.publish.outputs.version }})**" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ Successfully published to crates.io!" >> $GITHUB_STEP_SUMMARY

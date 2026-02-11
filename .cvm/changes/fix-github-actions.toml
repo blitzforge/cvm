@@ -1,0 +1,6 @@
+[update]
+major = []
+minor = []
+patch = ["cvm_cli"]
+pre = false
+summary = "Fix cvm info whitespace handling and add GitHub release automation"
