@@ -1,5 +1,6 @@
 use crate::project::CrateInfo;
 use inquire::{MultiSelect, Text};
+use std::process;
 
 pub fn select_crates(prompt: &str, remaining: &mut Vec<CrateInfo>) -> Vec<CrateInfo> {
     if remaining.is_empty() {
@@ -9,7 +10,13 @@ pub fn select_crates(prompt: &str, remaining: &mut Vec<CrateInfo>) -> Vec<CrateI
         .iter()
         .map(|c| format!("{} v{} at {}", c.name, c.version, c.path))
         .collect();
-    let selections: Vec<String> = MultiSelect::new(prompt, items).prompt().unwrap_or(vec![]);
+    let selections: Vec<String> = match MultiSelect::new(prompt, items).prompt() {
+        Ok(sel) => sel,
+        Err(_) => {
+            println!("\nCancelled.");
+            process::exit(0);
+        }
+    };
     let mut selected_indices = vec![];
     for (i, c) in remaining.iter().enumerate() {
         let item = format!("{} v{} at {}", c.name, c.version, c.path);
@@ -28,12 +35,18 @@ pub fn select_crates(prompt: &str, remaining: &mut Vec<CrateInfo>) -> Vec<CrateI
 
 pub fn prompt_summary() -> String {
     loop {
-        let s = Text::new("Enter a summary for this update:")
+        let s = match Text::new("Enter a summary for this update:")
             .with_help_message(
                 "Brief description of what is being updated, e.g., 'Fix bug in parser'",
             )
             .prompt()
-            .unwrap_or_default();
+        {
+            Ok(text) => text,
+            Err(_) => {
+                println!("\nCancelled.");
+                process::exit(0);
+            }
+        };
         let trimmed = s.trim();
         if !trimmed.is_empty() {
             return trimmed.to_string();
@@ -43,7 +56,11 @@ pub fn prompt_summary() -> String {
 }
 
 pub fn prompt_identifier() -> String {
-    Text::new("Enter prerelease identifier (e.g., alpha, canary, rc):")
-        .prompt()
-        .unwrap_or("alpha".to_string())
+    match Text::new("Enter prerelease identifier (e.g., alpha, canary, rc):").prompt() {
+        Ok(id) => id,
+        Err(_) => {
+            println!("\nCancelled.");
+            process::exit(0);
+        }
+    }
 }
