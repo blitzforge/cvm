@@ -25,7 +25,7 @@ jobs:
 
       - name: Check and apply version changes
         id: cvm
-        uses: blitzforge/cvm-action@v1
+        uses: lucasaarch/cvm-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -76,7 +76,7 @@ jobs:
 
       - name: Publish crates
         id: publish
-        uses: blitzforge/cvm-action@v1
+        uses: lucasaarch/cvm-action@v1
         with:
           command: "publish"
         env:

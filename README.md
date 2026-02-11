@@ -23,7 +23,7 @@ cargo install cvm_cli
 Or build from source:
 
 ```bash
-git clone https://github.com/blitzforge/cvm
+git clone https://github.com/lucasaarch/cvm
 cd cvm
 cargo install --path .
 ```
@@ -418,11 +418,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Authors
 
-- BlitzForge
 - Lucas Arch <luketsx@icloud.com>
 
 ## Links
 
-- [Repository](https://github.com/blitzforge/cvm)
+- [Repository](https://github.com/lucasaarch/cvm)
 - [Crates.io](https://crates.io/crates/cvm_cli)
 - [Documentation](https://docs.rs/cvm_cli)
