@@ -8,7 +8,7 @@ keywords = ["rust", "cargo", "versioning", "semver", "cli"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/blitzforge/cvm"
-version = "0.1.3"
+version = "0.1.4"
 
 [[bin]]
 name = "cvm"
