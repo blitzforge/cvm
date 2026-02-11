@@ -10,21 +10,13 @@ pub struct PublishedCrate {
 }
 
 #[derive(Debug)]
+#[derive(Default)]
 pub struct PublishOptions {
     pub dry_run: bool,
     pub token: Option<String>,
     pub allow_dirty: bool,
 }
 
-impl Default for PublishOptions {
-    fn default() -> Self {
-        Self {
-            dry_run: false,
-            token: None,
-            allow_dirty: false,
-        }
-    }
-}
 
 #[derive(Debug, Deserialize)]
 struct CargoMetadata {
