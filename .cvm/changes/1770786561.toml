@@ -1,0 +1,6 @@
+[update]
+major = ["cvm_cli"]
+minor = []
+patch = []
+pre = false
+summary = "info command update"
