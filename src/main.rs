@@ -158,8 +158,15 @@ fn main() -> Result<()> {
             let crates = project::analyze_project()?;
 
             if format == "json" {
-                let json = serde_json::to_string_pretty(&crates)?;
-                println!("{}", json);
+                // If there's only one crate, return just the version string
+                if crates.len() == 1 {
+                    let version = &crates[0].version;
+                    println!("{}", version);
+                } else {
+                    // For multiple crates, return the full array
+                    let json = serde_json::to_string_pretty(&crates)?;
+                    println!("{}", json);
+                }
             } else {
                 eprintln!("❌ Unsupported format: {}", format);
                 std::process::exit(1);
