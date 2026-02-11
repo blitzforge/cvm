@@ -1,0 +1,186 @@
+name: Version Management with CVM
+
+on:
+  push:
+    branches:
+      - canary
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check-pending-changes:
+    name: Check for pending version changes
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.check.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install CVM
+        run: cargo install cvm
+
+      - name: Check for pending changes
+        id: check
+        continue-on-error: true
+        run: |
+          if cvm status; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
+
+  apply-and-create-pr:
+    name: Apply version changes and create PR
+    runs-on: ubuntu-latest
+    needs: check-pending-changes
+    if: needs.check-pending-changes.outputs.has_changes == 'true' && github.ref == 'refs/heads/canary'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install CVM
+        run: cargo install cvm
+
+      - name: Show pending changes
+        run: cvm status || true
+
+      - name: Apply version changes (dry-run first)
+        run: cvm apply --dry-run
+
+      - name: Apply version changes
+        run: cvm apply
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create version bump branch
+        run: |
+          BRANCH_NAME="version-bump-$(date +%s)"
+          git checkout -b $BRANCH_NAME
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+
+      - name: Commit version changes
+        run: |
+          git add Cargo.toml */Cargo.toml
+          git commit -m "chore: apply version bumps
+
+          Applied all pending version changes from .cvm/changes/"
+
+      - name: Push branch
+        run: git push origin ${{ env.BRANCH_NAME }}
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ env.BRANCH_NAME }}
+          title: "chore: Version bump from canary"
+          body: |
+            ## Automated Version Bump
+
+            This PR was automatically created by the CVM workflow.
+
+            ### Changes Applied
+            All pending version changes from `.cvm/changes/` have been applied to the respective `Cargo.toml` files.
+
+            ### Next Steps
+            - Review the version changes
+            - Merge this PR to `main` when ready
+            - Tag the release if necessary
+
+            ---
+            *This PR was created by GitHub Actions*
+          labels: |
+            version-bump
+            automated
+
+  # Alternative: Direct commit to main (use with caution)
+  apply-direct:
+    name: Apply version changes directly
+    runs-on: ubuntu-latest
+    needs: check-pending-changes
+    if: needs.check-pending-changes.outputs.has_changes == 'true' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install CVM
+        run: cargo install cvm
+
+      - name: Apply version changes
+        run: cvm apply
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit and push
+        run: |
+          git add Cargo.toml */Cargo.toml
+          git commit -m "chore: apply version bumps [skip ci]"
+          git push
+
+  # Prerelease workflow example
+  canary-release:
+    name: Canary Release
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/canary'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install CVM
+        run: cargo install cvm
+
+      - name: Start prerelease mode if not active
+        run: |
+          if ! grep -q "enabled = true" .cvm/config.toml 2>/dev/null; then
+            cvm pre start canary
+            git add .cvm/config.toml
+            git commit -m "chore: start canary prerelease mode"
+            git push
+          fi
+
+      - name: Build and test
+        run: |
+          cargo build --release
+          cargo test
+
+      # Optionally publish canary version to crates.io
+      # - name: Publish canary
+      #   env:
+      #     CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      #   run: cargo publish --allow-dirty

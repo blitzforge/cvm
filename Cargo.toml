@@ -1,0 +1,21 @@
+[dependencies]
+anyhow = "1.0.101"
+inquire = "0.9.3"
+semver = "1.0.27"
+toml = "0.9.12"
+
+[dependencies.clap]
+features = ["derive"]
+version = "4.5.57"
+
+[package]
+authors = ["BlitzForge", "Lucas Arch <luketsx@icloud.com>"]
+categories = ["development-tools", "command-line-utilities"]
+description = "A powerful command-line tool for managing semantic versioning of Rust crates. Easily bump versions (major, minor, patch), update Cargo.toml files, and streamline your release workflow with automated version management."
+edition = "2021"
+keywords = ["rust", "cargo", "versioning", "semver", "cli"]
+license = "MIT"
+name = "cvm"
+readme = "README.md"
+repository = "https://github.com/blitzforge/cvm"
+version = "0.1.0"
