@@ -1,4 +1,4 @@
-name: Complete CI/CD Pipeline
+name: "Release Workflow"
 
 on:
   push:
@@ -72,10 +72,8 @@ jobs:
     # Only publish when:
     # 1. There are NO pending changes (versions are up-to-date)
     # 2. Tests passed
-    # 3. We're on the main branch
-    if: |
-      needs.check-and-apply.outputs.has-changes == 'false' &&
-      github.ref == 'refs/heads/main'
+    # Note: CVM manages prerelease vs release based on its own state
+    if: needs.check-and-apply.outputs.has-changes == 'false'
     permissions:
       contents: write # Required for creating tags and releases
 
