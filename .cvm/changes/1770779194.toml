@@ -1,0 +1,6 @@
+[update]
+major = []
+minor = []
+patch = ["cvm_cli"]
+pre = false
+summary = "Added new `setup` and `publish` commands"

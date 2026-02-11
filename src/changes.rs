@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 use toml::{Table, Value};
 
@@ -225,6 +226,49 @@ fn apply_bump(
     Ok(new_version_str)
 }
 
+/// Create a git tag for a crate version
+fn create_git_tag(crate_name: &str, version: &str) -> Result<()> {
+    let tag_name = format!("v{}", version);
+
+    // Check if tag already exists
+    let check_tag = Command::new("git")
+        .args(&["tag", "-l", &tag_name])
+        .output()
+        .context("Failed to check existing tags")?;
+
+    if !check_tag.stdout.is_empty() {
+        println!("  Tag {} already exists, skipping", tag_name);
+        return Ok(());
+    }
+
+    // Create the tag
+    let tag_message = format!("Release {} v{}", crate_name, version);
+    let result = Command::new("git")
+        .args(&["tag", "-a", &tag_name, "-m", &tag_message])
+        .output()
+        .context("Failed to create git tag")?;
+
+    if result.status.success() {
+        println!("  Created tag: {}", tag_name);
+
+        // Push the tag
+        let push_result = Command::new("git")
+            .args(&["push", "origin", &tag_name])
+            .output()
+            .context("Failed to push git tag")?;
+
+        if push_result.status.success() {
+            println!("  Pushed tag to origin");
+        } else {
+            eprintln!("  Warning: Failed to push tag to origin");
+        }
+    } else {
+        eprintln!("  Warning: Failed to create tag {}", tag_name);
+    }
+
+    Ok(())
+}
+
 /// Check for pending changes and print summary
 pub fn check_pending_changes() -> Result<()> {
     let changes_dir = std::path::Path::new(".cvm/changes");
@@ -304,7 +348,7 @@ pub fn check_pending_changes() -> Result<()> {
     std::process::exit(1);
 }
 
-pub fn load_and_apply_pending(dry_run: bool) -> Result<()> {
+pub fn load_and_apply_pending(dry_run: bool, create_tag: bool) -> Result<()> {
     let changes_dir = std::path::Path::new(".cvm/changes");
     if !changes_dir.exists() {
         println!("No pending updates found.");
@@ -328,6 +372,8 @@ pub fn load_and_apply_pending(dry_run: bool) -> Result<()> {
     let all_crates = analyze_project()?;
     let crate_map: HashMap<String, &CrateInfo> =
         all_crates.iter().map(|c| (c.name.clone(), c)).collect();
+
+    let mut updated_crates: HashMap<String, String> = HashMap::new();
 
     for entry in entries {
         let path = entry.path();
@@ -392,6 +438,7 @@ pub fn load_and_apply_pending(dry_run: bool) -> Result<()> {
                                 prerelease_id.as_deref(),
                             )?;
                             println!("  {} major → {}", c.name, new_version);
+                            updated_crates.insert(c.name.clone(), new_version);
                         }
                     }
                 }
@@ -407,6 +454,7 @@ pub fn load_and_apply_pending(dry_run: bool) -> Result<()> {
                                 prerelease_id.as_deref(),
                             )?;
                             println!("  {} minor → {}", c.name, new_version);
+                            updated_crates.insert(c.name.clone(), new_version);
                         }
                     }
                 }
@@ -422,6 +470,7 @@ pub fn load_and_apply_pending(dry_run: bool) -> Result<()> {
                                 prerelease_id.as_deref(),
                             )?;
                             println!("  {} patch → {}", c.name, new_version);
+                            updated_crates.insert(c.name.clone(), new_version);
                         }
                     }
                 }
@@ -459,6 +508,14 @@ pub fn load_and_apply_pending(dry_run: bool) -> Result<()> {
         println!("\n[DRY RUN] No changes were made.");
     } else {
         println!("\nAll updates applied successfully!");
+
+        // Create git tags if requested
+        if create_tag && !updated_crates.is_empty() {
+            println!("\nCreating git tags...");
+            for (crate_name, version) in updated_crates {
+                create_git_tag(&crate_name, &version)?;
+            }
+        }
     }
     Ok(())
 }

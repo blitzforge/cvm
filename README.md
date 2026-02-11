@@ -30,18 +30,36 @@ cargo install --path .
 
 ## Quick Start
 
+### Initialize CVM in your project
+
+```bash
+cd your-rust-project
+cvm setup
+```
+
+This creates:
+- `.cvm/config.toml` - Configuration file
+- `.cvm/changes/` - Directory for pending version changes
+- `.cvm/README.md` - Information about CVM
+
 ### Basic Workflow
 
-1. **Stage a version change** (interactive mode):
+1. **Initialize CVM** (first time only):
+   ```bash
+   cvm setup
+   ```
+
+2. **Stage a version change** (interactive mode):
    ```bash
    cvm
    ```
    This will prompt you to select crates and bump types (major, minor, or patch).
 
-2. **Apply all staged changes**:
+3. **Apply all staged changes**:
    ```bash
    cvm apply
    ```
+   By default, this creates git tags. Configure in `.cvm/config.toml` or use `--no-git-tags` to disable.
 
 ### Prerelease Workflow
 
@@ -98,6 +116,27 @@ Then applying changes sequentially:
   - If same as current base: increments prerelease number
 
 ## Commands
+
+### `cvm setup`
+Initialize CVM in the current project. Creates configuration files and directories.
+
+**Example:**
+```bash
+cvm setup
+```
+
+**Output:**
+```
+✅ CVM initialized successfully!
+
+Configuration file created at: .cvm/config.toml
+Change files will be stored in: .cvm/changes/
+
+Next steps:
+  1. Run 'cvm' to create version changes interactively
+  2. Run 'cvm apply' to apply pending changes
+  3. Run 'cvm status' to check for pending changes
+```
 
 ### `cvm` (no arguments)
 Interactive mode to select crates and bump types. Creates a change file in `.cvm/changes/`.
@@ -157,14 +196,21 @@ your-project/
 
 ### `.cvm/config.toml`
 
+Stores CVM configuration:
+
 ```toml
+# CVM Configuration
+
+[config]
+# Automatically create git tags when applying version changes
+git-tags = true
+
 [pre]
 enabled = true
 identifier = "canary"
 
 [pre.base_versions]
 my-crate = "0.1.0"
-another-crate = "1.2.3"
 ```
 
 ### `.cvm/changes/1234567890.toml`

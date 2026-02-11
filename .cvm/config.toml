@@ -1,0 +1,6 @@
+[config]
+git-tags = true
+
+[pre]
+enabled = false
+identifier = "alpha"

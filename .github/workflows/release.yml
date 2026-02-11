@@ -1,0 +1,104 @@
+name: Complete CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - alpha
+  pull_request:
+    paths:
+      - ".cvm/changes/**"
+  workflow_dispatch:
+
+jobs:
+  # Job 1: Check for pending version changes and apply them via PR
+  check-and-apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      has-changes: ${{ steps.cvm.outputs.has-changes }}
+      applied: ${{ steps.cvm.outputs.applied }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check and apply version changes
+        id: cvm
+        uses: blitzforge/cvm-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          pr-title: "chore: apply version bumps"
+          pr-labels: "version-bump,automated"
+
+      - name: Summary
+        run: |
+          echo "### Version Check Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Has pending changes: **${{ steps.cvm.outputs.has-changes }}**" >> $GITHUB_STEP_SUMMARY
+          echo "- Changes applied: **${{ steps.cvm.outputs.applied }}**" >> $GITHUB_STEP_SUMMARY
+
+  # Job 2: Run tests before publishing (optional but recommended)
+  test:
+    runs-on: ubuntu-latest
+    needs: check-and-apply
+    if: needs.check-and-apply.outputs.has-changes == 'false'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          profile: minimal
+
+      - name: Run tests
+        run: cargo test --all-features
+
+      - name: Run clippy
+        run: cargo clippy --all-features -- -D warnings
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+  # Job 3: Publish to crates.io with tags and releases
+  publish:
+    runs-on: ubuntu-latest
+    needs: [check-and-apply, test]
+    # Only publish when:
+    # 1. There are NO pending changes (versions are up-to-date)
+    # 2. Tests passed
+    # 3. We're on the main branch
+    if: |
+      needs.check-and-apply.outputs.has-changes == 'false' &&
+      github.ref == 'refs/heads/main'
+    permissions:
+      contents: write # Required for creating tags and releases
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Publish crates
+        id: publish
+        uses: blitzforge/cvm-action@v1
+        with:
+          command: "publish"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Publish Summary
+        if: steps.publish.outputs.published == 'true'
+        run: |
+          echo "### 🚀 Publishing Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Published: **${{ steps.publish.outputs.published }}**" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ steps.publish.outputs.version }}" ]; then
+            echo "- Version: **v${{ steps.publish.outputs.version }}**" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Successfully published to crates.io!" >> $GITHUB_STEP_SUMMARY

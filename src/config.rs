@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::path::Path;
 use toml::{Table, Value};
 
 use crate::project::analyze_project;
@@ -132,6 +133,26 @@ pub fn get_base_versions() -> HashMap<String, String> {
     result
 }
 
+pub fn should_create_git_tags() -> bool {
+    let config_path = ".cvm/config.toml";
+    if std::path::Path::new(config_path).exists() {
+        if let Ok(config_content) = fs::read_to_string(config_path) {
+            if let Ok(config) = toml::from_str::<Table>(&config_content) {
+                if let Some(config_section) = config.get("config") {
+                    if let Some(table) = config_section.as_table() {
+                        return table
+                            .get("git-tags")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true);
+                    }
+                }
+            }
+        }
+    }
+    // Default to true
+    true
+}
+
 pub fn init_cvm_dir() -> Result<()> {
     let cvm_dir = std::path::Path::new(".cvm");
     if !cvm_dir.exists() {
@@ -156,5 +177,32 @@ find the full documentation for it [in our repository](https://github.com/blitzf
         file.write_all(readme_content.as_bytes())?;
         file.sync_all()?;
     }
+    Ok(())
+}
+
+pub fn create_default_config() -> Result<()> {
+    init_cvm_dir()?;
+    let config_path = Path::new(".cvm/config.toml");
+
+    if config_path.exists() {
+        println!("⚠️  Config file already exists at .cvm/config.toml");
+        return Ok(());
+    }
+
+    let default_config = r#"# CVM Configuration
+
+[config]
+# Automatically create git tags when applying version changes
+git-tags = true
+"#;
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(config_path)?;
+    file.write_all(default_config.as_bytes())?;
+    file.sync_all()?;
+
     Ok(())
 }
