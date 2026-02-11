@@ -1,47 +1,12 @@
-name: "Release Workflow"
+name: "Publish to Crates.io"
 
 on:
-  push:
-    branches:
-      - alpha
-  pull_request:
-    paths:
-      - ".cvm/changes/**"
-  workflow_dispatch:
+  repository_dispatch:
+    types: [release-trigger]
 
 jobs:
-  check-and-apply:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    outputs:
-      has-changes: ${{ steps.cvm.outputs.has-changes }}
-      applied: ${{ steps.cvm.outputs.applied }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Check and apply version changes
-        id: cvm
-        uses: lucasaarch/cvm-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          pr-title: "chore: apply version bumps"
-          pr-labels: "version-bump,automated"
-
-      - name: Summary
-        run: |
-          echo "### Version Check Results" >> $GITHUB_STEP_SUMMARY
-          echo "- Has pending changes: **${{ steps.cvm.outputs.has-changes }}**" >> $GITHUB_STEP_SUMMARY
-          echo "- Changes applied: **${{ steps.cvm.outputs.applied }}**" >> $GITHUB_STEP_SUMMARY
-
   test:
     runs-on: ubuntu-latest
-    needs: check-and-apply
-    if: needs.check-and-apply.outputs.has-changes == 'false'
 
     steps:
       - name: Checkout repository
@@ -65,8 +30,7 @@ jobs:
 
   publish:
     runs-on: ubuntu-latest
-    needs: [check-and-apply, test]
-    if: needs.check-and-apply.outputs.has-changes == 'false'
+    needs: test
     permissions:
       contents: write
 
@@ -83,39 +47,33 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-      - name: Create Git Tag
-        if: steps.publish.outputs.published == 'true'
+      - name: Create and push tag
         run: |
-          VERSION="${{ steps.publish.outputs.version }}"
-          if [ -n "$VERSION" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git tag -a "v$VERSION" -m "Release v$VERSION"
-            git push origin "v$VERSION"
-            echo "Created and pushed tag v$VERSION"
+          VERSION="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${VERSION}"
+          git push origin "${VERSION}"
+
+      - name: Check if prerelease
+        id: check_prerelease
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if [[ "$VERSION" =~ -[0-9]+\. ]] || [[ "$VERSION" =~ -(alpha) ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
           else
-            echo "No version found, skipping tag creation"
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create GitHub Release
-        if: steps.publish.outputs.published == 'true' && steps.publish.outputs.version != ''
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ steps.check_prerelease.outputs.is_prerelease }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ steps.publish.outputs.version }}"
-          gh release create "v$VERSION" \
-            --title "Release v$VERSION" \
-            --notes "## 🚀 Release v$VERSION
-
-          Published to [crates.io](https://crates.io/crates/cvm_cli/$VERSION)
-
-          ### Installation
-          \`\`\`bash
-          cargo install cvm_cli
-          \`\`\`
-
-          ### What's Changed
-          This release includes bug fixes and improvements to the CVM CLI tool."
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"
 
       - name: Publish Summary
         if: steps.publish.outputs.published == 'true'
