@@ -1,6 +1,0 @@
-[update]
-major = []
-minor = []
-patch = ["cvm_cli"]
-pre = false
-summary = "Changed repository owners"
