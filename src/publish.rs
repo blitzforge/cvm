@@ -9,14 +9,12 @@ pub struct PublishedCrate {
     pub version: String,
 }
 
-#[derive(Debug)]
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct PublishOptions {
     pub dry_run: bool,
     pub token: Option<String>,
     pub allow_dirty: bool,
 }
-
 
 #[derive(Debug, Deserialize)]
 struct CargoMetadata {
