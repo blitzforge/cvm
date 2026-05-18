@@ -156,10 +156,11 @@ fn main() -> Result<()> {
         Some(Commands::Info { format }) => {
             // Get all crates in the project
             let crates = project::analyze_project()?;
+            let is_workspace = project::is_workspace_project()?;
 
             if format == "json" {
                 // If there's only one crate, return just the version string (no JSON formatting)
-                if crates.len() == 1 {
+                if crates.len() == 1 && !is_workspace {
                     // Use write! to avoid any automatic formatting or whitespace
                     use std::io::{self, Write};
                     let stdout = io::stdout();
