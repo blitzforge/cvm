@@ -29,8 +29,11 @@ enum Commands {
     Status,
     /// Get crate information as JSON
     Info {
+        /// Print a single release version line (for CI tags and scripts)
+        #[arg(long, conflicts_with = "format")]
+        version: bool,
         /// Output format
-        #[arg(long, default_value = "json")]
+        #[arg(long, default_value = "json", value_parser = ["json"])]
         format: String,
     },
     /// Manage prerelease mode
@@ -153,7 +156,12 @@ fn main() -> Result<()> {
             changes::check_pending_changes()?;
             Ok(())
         }
-        Some(Commands::Info { format }) => {
+        Some(Commands::Info { format, version }) => {
+            if version {
+                println!("{}", project::release_version()?);
+                return Ok(());
+            }
+
             // Get all crates in the project
             let crates = project::analyze_project()?;
             let is_workspace = project::is_workspace_project()?;

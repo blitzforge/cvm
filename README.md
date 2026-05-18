@@ -180,9 +180,14 @@ Get crate information as JSON. Useful for extracting version numbers and crate m
 ```bash
 cvm info
 # [{"name":"my-crate","version":"1.0.0","path":"Cargo.toml"}]
+
+# Single release version for CI tags (workspaces use [workspace.package].version)
+cvm info --version
+# 1.0.0
 ```
 
 **Options:**
+- `--version`: Print one release version line (for GitHub Actions tags and scripts)
 - `--format <FORMAT>`: Output format (default: json)
 
 ### `cvm publish`
@@ -375,7 +380,11 @@ jobs:
 Use `cvm info` to extract version information programmatically:
 
 ```bash
-# Get current version for a single crate project
+# Preferred: unified release version (workspace or all crates aligned)
+VERSION=$(cvm info --version)
+echo "Current version: $VERSION"
+
+# Per-crate JSON (multi-crate workspaces)
 VERSION=$(cvm info | jq -r '.[0].version')
 echo "Current version: $VERSION"
 

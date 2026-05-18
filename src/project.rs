@@ -60,6 +60,51 @@ pub fn is_workspace_project() -> Result<bool> {
     Ok(toml.contains_key("workspace"))
 }
 
+/// Returns `[workspace.package].version` when the root manifest defines a workspace package table.
+pub fn workspace_package_version() -> Result<Option<String>> {
+    let content = fs::read_to_string("Cargo.toml")
+        .with_context(|| "Failed to read Cargo.toml".to_string())?;
+    let toml: Table =
+        toml::from_str(&content).with_context(|| "Failed to parse Cargo.toml".to_string())?;
+
+    let Some(workspace) = toml.get("workspace").and_then(|w| w.as_table()) else {
+        return Ok(None);
+    };
+
+    let version = workspace
+        .get("package")
+        .and_then(|p| p.as_table())
+        .and_then(|package| package.get("version"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+
+    Ok(version)
+}
+
+/// Single release version for CI tags and summaries.
+///
+/// Prefers `[workspace.package].version` in workspaces; otherwise requires every crate
+/// in the project to share the same version string.
+pub fn release_version() -> Result<String> {
+    if let Some(version) = workspace_package_version()? {
+        return Ok(version);
+    }
+
+    let crates = analyze_project()?;
+    if crates.is_empty() {
+        return Err(anyhow::anyhow!("No crates found in project"));
+    }
+
+    let version = crates[0].version.clone();
+    if crates.iter().all(|c| c.version == version) {
+        return Ok(version);
+    }
+
+    Err(anyhow::anyhow!(
+        "Crates have different versions; use `cvm info` for per-crate JSON or set [workspace.package].version"
+    ))
+}
+
 fn read_crate_info(path: &str, workspace_version: Option<&str>) -> Result<CrateInfo> {
     let content = fs::read_to_string(path).with_context(|| format!("Failed to read {}", path))?;
     let toml: Table =
@@ -161,6 +206,82 @@ version.workspace = true
         assert_eq!(info.name, "foo");
         assert_eq!(info.version, "0.1.0");
         cleanup_temp_manifest(&manifest_path);
+    }
+
+    #[test]
+    fn workspace_package_version_reads_workspace_package_table() {
+        let dir = std::env::temp_dir().join(format!(
+            "cvm-workspace-version-test-{}",
+            TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("Cargo.toml"),
+            r#"
+[workspace]
+members = ["crates/foo"]
+
+[workspace.package]
+version = "1.2.3"
+"#,
+        )
+        .unwrap();
+
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir).unwrap();
+        let version = super::workspace_package_version().unwrap();
+        std::env::set_current_dir(original).unwrap();
+        fs::remove_dir_all(&dir).unwrap();
+
+        assert_eq!(version.as_deref(), Some("1.2.3"));
+    }
+
+    #[test]
+    fn release_version_uses_workspace_package_version() {
+        let dir = std::env::temp_dir().join(format!(
+            "cvm-release-version-test-{}",
+            TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("Cargo.toml"),
+            r#"
+[workspace]
+members = ["crates/foo", "crates/bar"]
+
+[workspace.package]
+version = "2.0.0"
+"#,
+        )
+        .unwrap();
+        fs::create_dir_all(dir.join("crates/foo")).unwrap();
+        fs::create_dir_all(dir.join("crates/bar")).unwrap();
+        fs::write(
+            dir.join("crates/foo/Cargo.toml"),
+            r#"
+[package]
+name = "foo"
+version.workspace = true
+"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.join("crates/bar/Cargo.toml"),
+            r#"
+[package]
+name = "bar"
+version.workspace = true
+"#,
+        )
+        .unwrap();
+
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir).unwrap();
+        let version = super::release_version().unwrap();
+        std::env::set_current_dir(original).unwrap();
+        fs::remove_dir_all(&dir).unwrap();
+
+        assert_eq!(version, "2.0.0");
     }
 
     #[test]
