@@ -73,10 +73,10 @@ fn read_crate_info(path: &str, workspace_version: Option<&str>) -> Result<CrateI
         .and_then(|n: &Value| n.as_str())
         .context("No name in [package]")?
         .to_string();
-    let version = if let Some(version) = package.get("version").and_then(|v: &Value| v.as_str()) {
+    let version_value = package.get("version");
+    let version = if let Some(version) = version_value.and_then(|v: &Value| v.as_str()) {
         version.to_string()
-    } else if package
-        .get("version")
+    } else if version_value
         .and_then(|v: &Value| v.as_table())
         .and_then(|v| v.get("workspace"))
         .and_then(|v: &Value| v.as_bool())
@@ -124,9 +124,25 @@ mod tests {
     }
 
     fn cleanup_temp_manifest(path: &Path) {
-        let _ = fs::remove_file(path);
+        if let Err(err) = fs::remove_file(path) {
+            assert_eq!(
+                err.kind(),
+                std::io::ErrorKind::NotFound,
+                "failed to remove test manifest {}: {}",
+                path.display(),
+                err
+            );
+        }
         if let Some(parent) = path.parent() {
-            let _ = fs::remove_dir_all(parent);
+            if let Err(err) = fs::remove_dir_all(parent) {
+                assert_eq!(
+                    err.kind(),
+                    std::io::ErrorKind::NotFound,
+                    "failed to remove test temp dir {}: {}",
+                    parent.display(),
+                    err
+                );
+            }
         }
     }
 
