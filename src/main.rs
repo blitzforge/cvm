@@ -373,7 +373,7 @@ fn handle_non_interactive(
 
     if dry_run {
         let toml_content = changes::generate_pending_toml(&summary, &major, &minor, &patch)?;
-        println!("DRY RUN — change file that would be written to .cvm/changes/<timestamp>.toml:\n");
+        println!("DRY RUN — change file that would be written to .cvm/changes/:\n");
         print!("{}", toml_content);
     } else {
         changes::save_pending(&summary, &major, &minor, &patch)?;

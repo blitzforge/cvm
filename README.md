@@ -163,8 +163,8 @@ cvm --crate foo --crate bar --bump minor --summary "Add TextFieldState API"
 # All workspace members
 cvm --crate all --bump patch --summary "Dependency pin wgpu 29"
 
-# Per-crate bump types (paired in order)
-cvm --crate foo --bump patch --crate bar --bump minor --summary "Mixed bumps"
+# Per-crate bump types (paired in order: first --crate with first --bump, etc.)
+cvm --crate foo --crate bar --bump patch --bump minor --summary "Mixed bumps"
 
 # Preview without writing (dry run)
 cvm --crate my-crate --bump patch --summary "Fix bug" --dry-run
