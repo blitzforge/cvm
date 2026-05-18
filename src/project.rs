@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use serde::Serialize;
 use std::fs;
+use std::path::{Path, PathBuf};
 use toml::{Table, Value};
 
 #[derive(Debug, Clone, Serialize)]
@@ -60,12 +61,11 @@ pub fn is_workspace_project() -> Result<bool> {
     Ok(toml.contains_key("workspace"))
 }
 
-/// Returns `[workspace.package].version` when the root manifest defines a workspace package table.
-pub fn workspace_package_version() -> Result<Option<String>> {
-    let content = fs::read_to_string("Cargo.toml")
-        .with_context(|| "Failed to read Cargo.toml".to_string())?;
-    let toml: Table =
-        toml::from_str(&content).with_context(|| "Failed to parse Cargo.toml".to_string())?;
+fn workspace_package_version_from_manifest(manifest_path: &Path) -> Result<Option<String>> {
+    let content = fs::read_to_string(manifest_path)
+        .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
+    let toml: Table = toml::from_str(&content)
+        .with_context(|| format!("Failed to parse {}", manifest_path.display()))?;
 
     let Some(workspace) = toml.get("workspace").and_then(|w| w.as_table()) else {
         return Ok(None);
@@ -79,6 +79,29 @@ pub fn workspace_package_version() -> Result<Option<String>> {
         .map(str::to_string);
 
     Ok(version)
+}
+
+/// Returns `[workspace.package].version` when the root manifest defines a workspace package table.
+pub fn workspace_package_version() -> Result<Option<String>> {
+    workspace_package_version_from_manifest(Path::new("Cargo.toml"))
+}
+
+/// Walks upward from a crate manifest until a workspace root `Cargo.toml` is found.
+pub fn find_workspace_root(crate_manifest_path: &Path) -> Option<PathBuf> {
+    let mut dir = crate_manifest_path.parent()?;
+    loop {
+        let manifest = dir.join("Cargo.toml");
+        if manifest.is_file() {
+            if let Ok(content) = fs::read_to_string(&manifest) {
+                if let Ok(toml) = toml::from_str::<Table>(&content) {
+                    if toml.contains_key("workspace") {
+                        return Some(dir.to_path_buf());
+                    }
+                }
+            }
+        }
+        dir = dir.parent()?;
+    }
 }
 
 /// Single release version for CI tags and summaries.
@@ -103,6 +126,46 @@ pub fn release_version() -> Result<String> {
     Err(anyhow::anyhow!(
         "Crates have different versions; use `cvm info` for per-crate JSON or set [workspace.package].version"
     ))
+}
+
+/// True when the crate manifest inherits its version from `[workspace.package]`.
+pub fn uses_workspace_version(crate_manifest_path: &str) -> Result<bool> {
+    let content = fs::read_to_string(crate_manifest_path)
+        .with_context(|| format!("Failed to read {}", crate_manifest_path))?;
+    let toml: Table =
+        toml::from_str(&content).with_context(|| format!("Failed to parse {}", crate_manifest_path))?;
+    let package = toml
+        .get("package")
+        .and_then(|p| p.as_table())
+        .context("No [package] section")?;
+    let version_value = package.get("version");
+    Ok(version_value
+        .and_then(|v: &Value| v.as_table())
+        .and_then(|v| v.get("workspace"))
+        .and_then(|v: &Value| v.as_bool())
+        == Some(true))
+}
+
+/// Path to edit and the resolved semver string for version bumps.
+///
+/// Workspace-inherited crates bump the root `Cargo.toml` `[workspace.package].version`.
+pub fn resolve_version_for_crate(crate_manifest_path: &str) -> Result<(String, String)> {
+    let manifest_path = Path::new(crate_manifest_path);
+    let workspace_version = find_workspace_root(manifest_path)
+        .map(|root| workspace_package_version_from_manifest(&root.join("Cargo.toml")))
+        .transpose()?
+        .flatten();
+    let info = read_crate_info(crate_manifest_path, workspace_version.as_deref())?;
+    let edit_path = if uses_workspace_version(crate_manifest_path)? {
+        let root = find_workspace_root(manifest_path)
+            .context("workspace root not found for crate using version.workspace = true")?;
+        root.join("Cargo.toml")
+            .to_string_lossy()
+            .into_owned()
+    } else {
+        crate_manifest_path.to_string()
+    };
+    Ok((edit_path, info.version))
 }
 
 fn read_crate_info(path: &str, workspace_version: Option<&str>) -> Result<CrateInfo> {
@@ -282,6 +345,46 @@ version.workspace = true
         fs::remove_dir_all(&dir).unwrap();
 
         assert_eq!(version, "2.0.0");
+    }
+
+    #[test]
+    fn resolve_version_for_crate_points_at_workspace_root() {
+        let dir = std::env::temp_dir().join(format!(
+            "cvm-resolve-version-test-{}",
+            TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(dir.join("crates/lemon")).unwrap();
+        fs::write(
+            dir.join("Cargo.toml"),
+            r#"
+[workspace]
+members = ["crates/lemon"]
+
+[workspace.package]
+version = "0.1.0"
+
+[workspace.dependencies]
+lemon = { path = "crates/lemon", version = "0.1.0" }
+"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.join("crates/lemon/Cargo.toml"),
+            r#"
+[package]
+name = "lemon"
+version.workspace = true
+"#,
+        )
+        .unwrap();
+
+        let crate_manifest = dir.join("crates/lemon/Cargo.toml");
+        let (edit_path, version) =
+            super::resolve_version_for_crate(crate_manifest.to_str().unwrap()).unwrap();
+        fs::remove_dir_all(&dir).unwrap();
+
+        assert_eq!(edit_path, dir.join("Cargo.toml").to_string_lossy());
+        assert_eq!(version, "0.1.0");
     }
 
     #[test]

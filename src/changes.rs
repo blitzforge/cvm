@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use toml::{Table, Value};
 
 use crate::config;
-use crate::project::{analyze_project, CrateInfo};
+use crate::project::{analyze_project, uses_workspace_version, CrateInfo};
 
 /// Generate the TOML content for a pending change without writing it to disk.
 pub fn generate_pending_toml(
@@ -108,6 +108,41 @@ fn replace_version_in_toml(content: &str, old_version: &str, new_version: &str) 
     ))
 }
 
+/// Like [`replace_version_in_toml`], but updates every matching `version = "…"` entry.
+fn replace_all_versions_in_toml(content: &str, old_version: &str, new_version: &str) -> Result<String> {
+    let version_patterns = [
+        format!(r#"version = "{}""#, old_version),
+        format!(r#"version="{}""#, old_version),
+        format!(r#"version = '{}'"#, old_version),
+        format!(r#"version='{}'"#, old_version),
+    ];
+
+    let replacements = [
+        format!(r#"version = "{}""#, new_version),
+        format!(r#"version="{}""#, new_version),
+        format!(r#"version = '{}'"#, new_version),
+        format!(r#"version='{}'"#, new_version),
+    ];
+
+    let mut result = content.to_string();
+    let mut replaced = false;
+    for (pattern, replacement) in version_patterns.iter().zip(replacements.iter()) {
+        if result.contains(pattern) {
+            result = result.replace(pattern, replacement);
+            replaced = true;
+        }
+    }
+
+    if replaced {
+        Ok(result)
+    } else {
+        Err(anyhow::anyhow!(
+            "Could not find version = \"{}\" in Cargo.toml",
+            old_version
+        ))
+    }
+}
+
 /// Apply a single bump to a crate, respecting prerelease mode
 fn apply_bump(
     crate_path: &str,
@@ -116,23 +151,12 @@ fn apply_bump(
     is_prerelease: bool,
     prerelease_id: Option<&str>,
 ) -> Result<String> {
-    let content =
-        fs::read_to_string(crate_path).with_context(|| format!("Failed to read {}", crate_path))?;
+    let (manifest_path, current_version_str) =
+        crate::project::resolve_version_for_crate(crate_path)?;
+    let content = fs::read_to_string(&manifest_path)
+        .with_context(|| format!("Failed to read {}", manifest_path))?;
 
-    // Parse TOML to read current version
-    let toml: Table =
-        toml::from_str(&content).with_context(|| format!("Failed to parse {}", crate_path))?;
-
-    let package = toml
-        .get("package")
-        .and_then(|p| p.as_table())
-        .context("No [package] section")?;
-    let current_version_str = package
-        .get("version")
-        .and_then(|v: &Value| v.as_str())
-        .context("No version in [package]")?;
-
-    let current_version = Version::parse(current_version_str)
+    let current_version = Version::parse(&current_version_str)
         .with_context(|| format!("Invalid version: {}", current_version_str))?;
 
     let new_version_str = if is_prerelease {
@@ -221,14 +245,18 @@ fn apply_bump(
         }
     };
 
-    // Preserve formatting by doing in-place replacement of version line
-    let new_content = replace_version_in_toml(&content, current_version_str, &new_version_str)?;
+    let workspace_root = uses_workspace_version(crate_path)?;
+    let new_content = if workspace_root {
+        replace_all_versions_in_toml(&content, &current_version_str, &new_version_str)?
+    } else {
+        replace_version_in_toml(&content, &current_version_str, &new_version_str)?
+    };
 
     let mut file = OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
-        .open(crate_path)?;
+        .open(&manifest_path)?;
     file.write_all(new_content.as_bytes())?;
     file.sync_all()?;
 
@@ -391,9 +419,18 @@ pub fn load_and_apply_pending(dry_run: bool) -> Result<()> {
                 .unwrap_or(&empty_array);
 
             if !dry_run {
+                let mut workspace_version_bumped = false;
+
                 for crate_name in major_crates {
                     if let Some(name_str) = crate_name.as_str() {
                         if let Some(c) = crate_map.get(name_str) {
+                            if workspace_version_bumped && uses_workspace_version(&c.path)? {
+                                println!(
+                                    "  {} major → (skipped; workspace version already bumped)",
+                                    c.name
+                                );
+                                continue;
+                            }
                             let new_version = apply_bump(
                                 &c.path,
                                 &c.name,
@@ -401,6 +438,9 @@ pub fn load_and_apply_pending(dry_run: bool) -> Result<()> {
                                 is_pre,
                                 prerelease_id.as_deref(),
                             )?;
+                            if uses_workspace_version(&c.path)? {
+                                workspace_version_bumped = true;
+                            }
                             println!("  {} major → {}", c.name, new_version);
                         }
                     }
@@ -409,6 +449,13 @@ pub fn load_and_apply_pending(dry_run: bool) -> Result<()> {
                 for crate_name in minor_crates {
                     if let Some(name_str) = crate_name.as_str() {
                         if let Some(c) = crate_map.get(name_str) {
+                            if workspace_version_bumped && uses_workspace_version(&c.path)? {
+                                println!(
+                                    "  {} minor → (skipped; workspace version already bumped)",
+                                    c.name
+                                );
+                                continue;
+                            }
                             let new_version = apply_bump(
                                 &c.path,
                                 &c.name,
@@ -416,6 +463,9 @@ pub fn load_and_apply_pending(dry_run: bool) -> Result<()> {
                                 is_pre,
                                 prerelease_id.as_deref(),
                             )?;
+                            if uses_workspace_version(&c.path)? {
+                                workspace_version_bumped = true;
+                            }
                             println!("  {} minor → {}", c.name, new_version);
                         }
                     }
@@ -424,6 +474,13 @@ pub fn load_and_apply_pending(dry_run: bool) -> Result<()> {
                 for crate_name in patch_crates {
                     if let Some(name_str) = crate_name.as_str() {
                         if let Some(c) = crate_map.get(name_str) {
+                            if workspace_version_bumped && uses_workspace_version(&c.path)? {
+                                println!(
+                                    "  {} patch → (skipped; workspace version already bumped)",
+                                    c.name
+                                );
+                                continue;
+                            }
                             let new_version = apply_bump(
                                 &c.path,
                                 &c.name,
@@ -431,6 +488,9 @@ pub fn load_and_apply_pending(dry_run: bool) -> Result<()> {
                                 is_pre,
                                 prerelease_id.as_deref(),
                             )?;
+                            if uses_workspace_version(&c.path)? {
+                                workspace_version_bumped = true;
+                            }
                             println!("  {} patch → {}", c.name, new_version);
                         }
                     }
