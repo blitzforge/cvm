@@ -99,18 +99,35 @@ fn read_crate_info(path: &str, workspace_version: Option<&str>) -> Result<CrateI
 mod tests {
     use super::read_crate_info;
     use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn create_temp_manifest(contents: &str) -> String {
+    static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    fn create_temp_manifest(contents: &str) -> PathBuf {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!("cvm-project-test-{}", nanos));
+        let counter = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "cvm-project-test-{}-{}-{}",
+            std::process::id(),
+            nanos,
+            counter
+        ));
         fs::create_dir_all(&dir).unwrap();
         let manifest_path = dir.join("Cargo.toml");
         fs::write(&manifest_path, contents).unwrap();
-        manifest_path.to_string_lossy().to_string()
+        manifest_path
+    }
+
+    fn cleanup_temp_manifest(path: &Path) {
+        let _ = fs::remove_file(path);
+        if let Some(parent) = path.parent() {
+            let _ = fs::remove_dir_all(parent);
+        }
     }
 
     #[test]
@@ -123,9 +140,11 @@ version.workspace = true
 "#,
         );
 
-        let info = read_crate_info(&manifest_path, Some("0.1.0")).unwrap();
+        let info =
+            read_crate_info(manifest_path.to_string_lossy().as_ref(), Some("0.1.0")).unwrap();
         assert_eq!(info.name, "foo");
         assert_eq!(info.version, "0.1.0");
+        cleanup_temp_manifest(&manifest_path);
     }
 
     #[test]
@@ -138,10 +157,11 @@ version.workspace = true
 "#,
         );
 
-        let err = read_crate_info(&manifest_path, None).unwrap_err();
+        let err = read_crate_info(manifest_path.to_string_lossy().as_ref(), None).unwrap_err();
         assert_eq!(
             err.to_string(),
             "No version in [workspace.package] for crate using version.workspace = true"
         );
+        cleanup_temp_manifest(&manifest_path);
     }
 }
