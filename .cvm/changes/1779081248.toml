@@ -1,0 +1,6 @@
+[update]
+major = []
+minor = []
+patch = ["cvm_cli"]
+pre = false
+summary = "Fixed info fails when crates use version.workspaces = true"
