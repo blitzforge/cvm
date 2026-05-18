@@ -10,18 +10,13 @@ use toml::{Table, Value};
 use crate::config;
 use crate::project::{analyze_project, CrateInfo};
 
-pub fn save_pending(
+/// Generate the TOML content for a pending change without writing it to disk.
+pub fn generate_pending_toml(
     summary: &str,
     major: &[CrateInfo],
     minor: &[CrateInfo],
     patch: &[CrateInfo],
-) -> Result<()> {
-    config::init_cvm_dir()?;
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    let filename = format!(".cvm/changes/{}.toml", timestamp);
+) -> Result<String> {
     let mut config = Table::new();
     let mut update_table = Table::new();
     update_table.insert("summary".to_string(), Value::String(summary.to_string()));
@@ -55,7 +50,22 @@ pub fn save_pending(
     let is_prerelease = config::is_prerelease_enabled();
     update_table.insert("pre".to_string(), Value::Boolean(is_prerelease));
     config.insert("update".to_string(), Value::Table(update_table));
-    let config_content = toml::to_string(&config).with_context(|| "Failed to serialize config")?;
+    toml::to_string(&config).with_context(|| "Failed to serialize config")
+}
+
+pub fn save_pending(
+    summary: &str,
+    major: &[CrateInfo],
+    minor: &[CrateInfo],
+    patch: &[CrateInfo],
+) -> Result<()> {
+    config::init_cvm_dir()?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let filename = format!(".cvm/changes/{}.toml", timestamp);
+    let config_content = generate_pending_toml(summary, major, minor, patch)?;
     let mut file = OpenOptions::new()
         .create(true)
         .write(true)

@@ -149,6 +149,41 @@ cvm
 # Summary: Add new feature X
 ```
 
+### Non-interactive change creation
+
+Create a change file in a single command — ideal for CI, scripts, and bots.
+
+```bash
+# Single crate
+cvm --crate my-crate --bump patch --summary "Fix scroll clipping"
+
+# Multiple crates, same bump type
+cvm --crate foo --crate bar --bump minor --summary "Add TextFieldState API"
+
+# All workspace members
+cvm --crate all --bump patch --summary "Dependency pin wgpu 29"
+
+# Per-crate bump types (paired in order)
+cvm --crate foo --bump patch --crate bar --bump minor --summary "Mixed bumps"
+
+# Preview without writing (dry run)
+cvm --crate my-crate --bump patch --summary "Fix bug" --dry-run
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--crate <NAME>` | Crate to include (repeatable; use `all` for every workspace member) |
+| `--bump <TYPE>` | `major`, `minor`, or `patch` — supply once for all crates, or once per crate |
+| `--summary <TEXT>` | Required changelog line stored in the change file |
+| `--dry-run` | Print the TOML that would be written; do not create the file |
+
+Errors are reported with a non-zero exit code when:
+- A crate name is not found in the workspace
+- `--bump` count is neither 1 nor equal to the number of `--crate` values
+- `--summary` is missing or empty
+
 ### `cvm apply`
 Applies all pending changes in chronological order.
 
@@ -360,18 +395,27 @@ jobs:
 ### Typical CI/CD Flow
 
 1. **Development Branch** (`canary`):
-   - Developers create changes: `cvm` → select crates → add summary
+   - Developers create changes interactively (`cvm`) or non-interactively
+     (`cvm --crate <name> --bump <type> --summary "<text>"`)
    - Commit changes to `.cvm/changes/` directory
    - Push to canary branch
 
-2. **CI Pipeline Runs**:
+2. **Automated bump in CI** (e.g., after a PR merges):
+   ```bash
+   cvm --crate my-crate --bump patch --summary "Bump after #42"
+   git add .cvm/changes/
+   git commit -m "chore: stage patch bump"
+   git push
+   ```
+
+3. **CI Pipeline Runs**:
    - Check for pending changes: `cvm status`
    - Apply changes: `cvm apply`
    - Run tests with new versions
    - Commit updated `Cargo.toml` files
    - Create PR to main or commit directly
 
-3. **Production Branch** (`main`):
+4. **Production Branch** (`main`):
    - Merge PR with version bumps
    - Publish to crates.io: `cvm publish`
 

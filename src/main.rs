@@ -5,7 +5,7 @@ mod publish;
 mod ui;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{ArgAction, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "cvm")]
@@ -13,6 +13,29 @@ use clap::{Parser, Subcommand};
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
+
+    /// Crate to include (repeatable; use 'all' for all workspace members)
+    #[arg(long = "crate", value_name = "NAME", action = ArgAction::Append)]
+    crates: Option<Vec<String>>,
+
+    /// Semver bump type for the crate(s) — 'major', 'minor', or 'patch'.
+    /// Supply once to apply the same bump to every --crate, or once per --crate
+    /// to pair them in order.
+    #[arg(
+        long,
+        value_name = "TYPE",
+        value_parser = ["major", "minor", "patch"],
+        action = ArgAction::Append
+    )]
+    bump: Option<Vec<String>>,
+
+    /// Human-readable changelog line (required in non-interactive mode)
+    #[arg(long, value_name = "TEXT")]
+    summary: Option<String>,
+
+    /// Print the change file that would be created without writing it
+    #[arg(long)]
+    dry_run: bool,
 }
 
 #[derive(Subcommand)]
@@ -82,6 +105,11 @@ fn main() -> Result<()> {
             Ok(())
         }
         None => {
+            // Non-interactive mode when any of --crate / --bump / --summary are provided
+            if cli.crates.is_some() || cli.bump.is_some() || cli.summary.is_some() {
+                return handle_non_interactive(cli.crates, cli.bump, cli.summary, cli.dry_run);
+            }
+
             // Check if CVM is initialized
             if !std::path::Path::new(".cvm/config.toml").exists() {
                 eprintln!("❌ CVM is not initialized in this project.");
@@ -230,4 +258,129 @@ fn main() -> Result<()> {
             Ok(())
         }
     }
+}
+
+/// Handle non-interactive change creation triggered by --crate / --bump / --summary.
+fn handle_non_interactive(
+    crate_args: Option<Vec<String>>,
+    bump_args: Option<Vec<String>>,
+    summary_arg: Option<String>,
+    dry_run: bool,
+) -> Result<()> {
+    // Check if CVM is initialized
+    if !std::path::Path::new(".cvm/config.toml").exists() {
+        eprintln!("❌ CVM is not initialized in this project.");
+        eprintln!("\nRun 'cvm setup' to initialize CVM.");
+        std::process::exit(1);
+    }
+
+    // Validate required flags
+    let crate_names = crate_args.unwrap_or_default();
+    if crate_names.is_empty() {
+        eprintln!("❌ --crate is required. Specify one or more crate names, or use 'all'.");
+        std::process::exit(1);
+    }
+
+    let bump_types = bump_args.unwrap_or_default();
+    if bump_types.is_empty() {
+        eprintln!("❌ --bump is required (major, minor, or patch).");
+        std::process::exit(1);
+    }
+
+    let summary = match summary_arg {
+        Some(s) if !s.trim().is_empty() => s,
+        _ => {
+            eprintln!("❌ --summary is required and cannot be empty.");
+            std::process::exit(1);
+        }
+    };
+
+    // Resolve workspace crates
+    let all_crates = project::analyze_project()?;
+    if all_crates.is_empty() {
+        eprintln!("❌ No crates found in the project.");
+        std::process::exit(1);
+    }
+    let crate_map: std::collections::HashMap<String, project::CrateInfo> = all_crates
+        .iter()
+        .map(|c| (c.name.clone(), c.clone()))
+        .collect();
+
+    // Expand 'all' keyword
+    let resolved: Vec<String> = if crate_names.len() == 1 && crate_names[0] == "all" {
+        all_crates.iter().map(|c| c.name.clone()).collect()
+    } else {
+        if crate_names.iter().any(|n| n == "all") {
+            eprintln!("❌ 'all' cannot be combined with specific crate names.");
+            std::process::exit(1);
+        }
+        // Validate each crate name
+        let mut unknown: Vec<&str> = Vec::new();
+        for name in &crate_names {
+            if !crate_map.contains_key(name) {
+                unknown.push(name.as_str());
+            }
+        }
+        if !unknown.is_empty() {
+            let available: Vec<&str> = all_crates.iter().map(|c| c.name.as_str()).collect();
+            eprintln!(
+                "❌ Unknown crate(s): {}. Available: {}",
+                unknown.join(", "),
+                available.join(", ")
+            );
+            std::process::exit(1);
+        }
+        crate_names.clone()
+    };
+
+    // Map crates to bump types
+    // - 1 bump  → apply to every crate
+    // - N bumps → pair by position (N must equal number of crates)
+    let pairs: Vec<(&str, &str)> = if bump_types.len() == 1 {
+        resolved
+            .iter()
+            .map(|n| (n.as_str(), bump_types[0].as_str()))
+            .collect()
+    } else if bump_types.len() == resolved.len() {
+        resolved
+            .iter()
+            .zip(bump_types.iter())
+            .map(|(n, b)| (n.as_str(), b.as_str()))
+            .collect()
+    } else {
+        eprintln!(
+            "❌ Number of --bump values ({}) must be 1 or match the number of --crate values ({}).",
+            bump_types.len(),
+            resolved.len()
+        );
+        std::process::exit(1);
+    };
+
+    // Sort into major / minor / patch buckets
+    let mut major: Vec<project::CrateInfo> = Vec::new();
+    let mut minor: Vec<project::CrateInfo> = Vec::new();
+    let mut patch: Vec<project::CrateInfo> = Vec::new();
+
+    for (name, bump) in &pairs {
+        let info = crate_map[*name].clone();
+        match *bump {
+            "major" => major.push(info),
+            "minor" => minor.push(info),
+            "patch" => patch.push(info),
+            _ => unreachable!(), // validated by clap value_parser
+        }
+    }
+
+    if dry_run {
+        let toml_content = changes::generate_pending_toml(&summary, &major, &minor, &patch)?;
+        println!("DRY RUN — change file that would be written to .cvm/changes/<timestamp>.toml:\n");
+        print!("{}", toml_content);
+    } else {
+        changes::save_pending(&summary, &major, &minor, &patch)?;
+        println!("✅ Change staged successfully.");
+        println!("   Run 'cvm status' to review pending changes.");
+        println!("   Run 'cvm apply'  to apply them.");
+    }
+
+    Ok(())
 }
