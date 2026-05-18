@@ -109,7 +109,11 @@ fn replace_version_in_toml(content: &str, old_version: &str, new_version: &str) 
 }
 
 /// Like [`replace_version_in_toml`], but updates every matching `version = "…"` entry.
-fn replace_all_versions_in_toml(content: &str, old_version: &str, new_version: &str) -> Result<String> {
+fn replace_all_versions_in_toml(
+    content: &str,
+    old_version: &str,
+    new_version: &str,
+) -> Result<String> {
     let version_patterns = [
         format!(r#"version = "{}""#, old_version),
         format!(r#"version="{}""#, old_version),

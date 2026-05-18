@@ -132,8 +132,8 @@ pub fn release_version() -> Result<String> {
 pub fn uses_workspace_version(crate_manifest_path: &str) -> Result<bool> {
     let content = fs::read_to_string(crate_manifest_path)
         .with_context(|| format!("Failed to read {}", crate_manifest_path))?;
-    let toml: Table =
-        toml::from_str(&content).with_context(|| format!("Failed to parse {}", crate_manifest_path))?;
+    let toml: Table = toml::from_str(&content)
+        .with_context(|| format!("Failed to parse {}", crate_manifest_path))?;
     let package = toml
         .get("package")
         .and_then(|p| p.as_table())
@@ -159,9 +159,7 @@ pub fn resolve_version_for_crate(crate_manifest_path: &str) -> Result<(String, S
     let edit_path = if uses_workspace_version(crate_manifest_path)? {
         let root = find_workspace_root(manifest_path)
             .context("workspace root not found for crate using version.workspace = true")?;
-        root.join("Cargo.toml")
-            .to_string_lossy()
-            .into_owned()
+        root.join("Cargo.toml").to_string_lossy().into_owned()
     } else {
         crate_manifest_path.to_string()
     };
